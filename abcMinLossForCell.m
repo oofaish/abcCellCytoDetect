@@ -13,6 +13,8 @@ function [ pSpace, minLoss, cellMask ] = abcMinLossForCell( pSpace, cellParams, 
     targetEdges = edge( canvas );
     yStruct = struct();
     yStruct.targetEdges = targetEdges;
+    yStruct.targetMask  = canvas ~= 1;
+    yStruct.target      = canvas;
     
     %this is a bit naughty - I am mixing cellParams and allParams
     %will probably blow in my face later.
@@ -27,19 +29,28 @@ end
 
 function [ pSpace, minLoss, cellMask ] = gridSearch( pSpace, yStruct, allParams, optimisationParams )
     rs = optimisationParams.minRadius:optimisationParams.maxRadius;%ALI - just for funs
+    ts = 0:0.03:pi;%ALI
+    ms = 1:0.03:1.6;%ALI
     losses = zeros( size( rs ) );
     cellMasks = cell( size( losses ) );
     xStruct = struct();
     i = 0;
     for radius = rs
-        i = i + 1;
-        %disp( radius );
-        pSpace.radius = radius;
-        cellParams = abcStructureUnion( pSpace, allParams );
-        [ cellCanvas, cellMask, ~, ~ ] = abcDrawCell( cellParams, allParams.canvasSize );
-        xStruct.cellCanvas = cellCanvas;
-        losses( i ) = lossFn( xStruct, yStruct, optimisationParams );                       
-        cellMasks{ i } = cellMask;
+        for theta = ts
+            for mvm = ms
+                i = i + 1;
+                %disp( radius );
+                pSpace.radius = radius;
+                pSpace.majorVsMinorAngle = theta;
+                pSpace.majorVsMinor = mvm;
+                cellParams = abcStructureUnion( pSpace, allParams );
+                [ cellCanvas, cellMask, ~, ~ ] = abcDrawCell( cellParams, allParams.canvasSize );
+                xStruct.cellCanvas = cellCanvas;
+                losses( i ) = lossFn( xStruct, yStruct, optimisationParams );                       
+                cellMasks{ i } = cellMask;
+            end
+        end
+        disp( pSpace );
     end
     
     [ minLoss, minIndex ] = min( losses );
@@ -76,14 +87,18 @@ function [ pSpace, minLoss, cellMask ] = simplex(  pSpace, yStruct, allParams, o
     f = @( x )( simplexLossFn( x, yStruct, allParams, optimisationParams ) );
     
     if optimisationParams.visuallyVerbose
-        options = optimset( 'Display', 'iter', 'PlotFcns', @optimplotfval );
+        options = optimset( 'Display', 'iter', 'PlotFcns', @optimplotfval, 'TolFun', optimisationParams.epsilon / 100, 'TolX', optimisationParams.epsilon );
     else
-        options = optimset( );
+        options = optimset( 'DiffMinChange', 0.2, 'TolFun', optimisationParams.epsilon / 100, 'TolX', optimisationParams.epsilon );
     end
 
-    [ x, minLoss ] = fminsearch( f, optimisationParams.x0, options );
+    [ x, minLoss, exitFlag ] = fminsearchbnd( f, optimisationParams.x0, optimisationParams.lowerBound, optimisationParams.upperBound, options );
+    
+    disp( [ 'Exit Flag Was ', num2str( exitFlag ) ] );
     
     pSpace.radius = x( 1 );
+    pSpace.majorVsMinor = x( 2 );
+    pSpace.majorVsMinorAngle = x( 3 );
     
     %get the mask
     cellParams  = abcStructureUnion( pSpace, allParams );
@@ -91,16 +106,22 @@ function [ pSpace, minLoss, cellMask ] = simplex(  pSpace, yStruct, allParams, o
 end
 
 function loss = simplexLossFn( x, yStruct, allParams, optimisationParams )
-    if x(1) > optimisationParams.minRadius
-        pSpace                          = struct();
-        pSpace.radius                   = x( 1 );
-        cellParams                      = abcStructureUnion( pSpace, allParams );
-        [ cellCanvas, ~, ~, ~ ]         = abcDrawCell( cellParams, allParams.canvasSize );
-        xStruct.cellCanvas              = cellCanvas;
-        loss                           = lossFn( xStruct, yStruct, optimisationParams );                       
-    else
-        loss = 10000;
+    if( optimisationParams.visuallyVerbose )
+        disp( x );
     end
+    %if 1 || abs( x(1) - 60 ) < 1
+    pSpace                          = struct();
+    pSpace.radius                   = x( 1 );
+    pSpace.majorVsMinor             = x( 2 );
+    pSpace.majorVsMinorAngle        = x( 3 );
+    cellParams                      = abcStructureUnion( pSpace, allParams );
+    [ cellCanvas, cellMask, ~, ~ ]  = abcDrawCell( cellParams, allParams.canvasSize );
+    xStruct.cellCanvas              = cellCanvas;
+    xStruct.cellMask                = cellMask;
+    loss                            = lossFn( xStruct, yStruct, optimisationParams );                       
+    %else
+    %    loss = 1000000000;
+    %end
    
 end
 
@@ -113,12 +134,24 @@ function l = lossFn( xStruct, yStruct, optimisationParams )
     isTruncatedSquareLoss = strcmp( optimisationParams.lossFunction, 'truncatedSquareLoss' );
     targetEdges = yStruct.targetEdges;
     cellCanvas  = xStruct.cellCanvas;
-
+            
+    if optimisationParams.checkUniformIntensity
+        canvas      = yStruct.target;
+        intensities = canvas( xStruct.cellMask );
+    
+        %avgInt = mean( intensities );
+        modInt = mode( intensities );
+        Q90    = quantile( intensities, 0.95 );
+        intensityScore =( Q90 - modInt );
+    else
+        intensityScore = 0;
+    end
+    
     cellEdge = edge( cellCanvas );
 
     distanceToEdge = bwdist( cellEdge, 'euclidean' );
 
-    if( optimisationParams.visuallyVerbos )
+    if( 0 && optimisationParams.visuallyVerbose )
         tmp1 = distanceToEdge .* targetEdges;
         imagesc( tmp1 );
         pause( 0.1 );
@@ -138,5 +171,10 @@ function l = lossFn( xStruct, yStruct, optimisationParams )
         tmp1 = tmp0;
     end
     
-    l = tmp1' * tmp1;
+    l = ( tmp1' * tmp1 ) / nonZeros;
+    
+    %disp( [ 'IntensityScore=', num2str( Q90 ), '---',  num2str( modInt ), ', DistanceScore = ', num2str( l ) ] );
+    %disp( [ 'IntensityScore=', num2str( intensityScore ), ', DistanceScore = ', num2str( l ) ] );
+    
+    l = l + intensityScore;
 end 
