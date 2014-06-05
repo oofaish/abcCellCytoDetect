@@ -1,3 +1,5 @@
+rng('shuffle');
+
 close all;
 
 cellToTest = -1;%if this is set a specific cell, we dont create a new image
@@ -18,6 +20,13 @@ if( regenerateImage || ~exist( 'canvas', 'var' ) )
     params.randomiseAlpha = false;
     params = abcParams( params );
     [ canvas, nucleusInfos, cellInfos ] = abcGenerateImage( false, false, '', params );
+    
+    if( 1 )
+        gBlur = fspecial('gaussian',[3 3],2);    
+        canvas = imfilter(canvas,gBlur,'same');
+    end
+
+    
 end
 
 optimisationParams = abcOptimisationParams();
@@ -40,10 +49,10 @@ cellParams.drawNucleus = false;
 optimisationParams = abcOptimisationParams();
 
 %imshow( canvas );
-
-h1 = figure;
+scrsz = get(0,'ScreenSize');
+h1 = figure('Position',[0 scrsz( 4 ) / 1.5 scrsz(3) scrsz(4) * 3 / 5]);
 if( 1 || testingOneCell )
-    subplot( 121 );
+    subplot( 131 );
     imshow( canvas );
     pause( 0.01 );
 end
@@ -73,22 +82,26 @@ for i = 1:size( splits, 1 )
      newCanvas = abcAddNextCellToCanvas( newCanvas, thisCanvas );
      numberOfCells = numel( cells );
      actualX = x * 0;
-    for i = 0:(numberOfCells-1)
-        actualX( i * 3 + 1 ) = cellInfos{ cells( i + 1 ) }.pSpace.radius;
-        actualX( i * 3 + 2 ) = cellInfos{ cells( i + 1 ) }.pSpace.majorVsMinor;
-        actualX( i * 3 + 3 ) = cellInfos{ cells( i + 1 ) }.pSpace.majorVsMinorAngle;
-    end
+     if( 1 )
+         for i = 0:(numberOfCells-1)
+            actualX( i * 3 + 1 ) = cellInfos{ cells( i + 1 ) }.pSpace.radius;
+            actualX( i * 3 + 2 ) = cellInfos{ cells( i + 1 ) }.pSpace.majorVsMinor;
+            actualX( i * 3 + 3 ) = cellInfos{ cells( i + 1 ) }.pSpace.majorVsMinorAngle;
+         end
+     else
+         for i = 1:numberOfCells
+            actualX( i ) = cellInfos{ cells( i ) }.pSpace.radius;
+         end
+         
+     end
 
     abcFancyPrintCellResults( i, minLoss, x, actualX );
     
     newMask( mask == 1 ) = 1;
-    subplot( 122 );
+    subplot( 132 );
     imshow( newCanvas );
     pause( 0.01 );
 end
- 
- subplot( 122 );
- imshow( newCanvas );
- 
+  
  
  hold off;

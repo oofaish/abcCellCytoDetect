@@ -42,12 +42,15 @@ function [ x, minLoss, canvas, mask ] = simplex( yStruct, cellParamsArray, allPa
         %options = optimset( 'DiffMinChange', 0.0, 'TolFun', optimisationParams.epsilon, 'TolX', optimisationParams.epsilon );
     end
     
-    %options = optimoptions( 'fmincon', 'Display', 'Iter', 'DiffMinChange', 0.1 );
-    options = optimoptions( 'fmincon', 'Diagnostics', 'on', 'DiffMinChange', 0.1 );
     numberOfCells = numel( cellParamsArray );
     x0 = repmat( optimisationParams.x0, 1, numberOfCells );
     lb = repmat( optimisationParams.lowerBound, 1, numberOfCells );
     ub = repmat( optimisationParams.upperBound, 1, numberOfCells );
+    gradStep = repmat( [ 1, 0.05, 0.05 ], 1, numberOfCells );
+    %FIXME - remember you are blurring.
+    DiffMaxChange = 0.08;%'Algorithm', 'sqp'
+    %options = optimoptions( 'fmincon', 'Display', 'Iter', 'DiffMinChange', 0.1 );, 'Algorithm', 'active-set'
+    options = optimoptions( 'fmincon','Algorithm', 'sqp', 'TolX', 1e-5, 'TolFun', 1e-4, 'Diagnostics', 'on', 'Display', 'Iter', 'FinDiffRelStep', gradStep, 'DiffMaxChange', DiffMaxChange,'FinDiffType', 'central' );%, 'PlotFcns', @optimplotfval );'FinDiffType', 'central'
     
     
     if( 0 )
@@ -57,42 +60,63 @@ function [ x, minLoss, canvas, mask ] = simplex( yStruct, cellParamsArray, allPa
     else
         A = eye( numel( lb ), numel( lb ) );
         %A( 1:3, 1:3 ) = A( 1:3, 1:3 ) * -1;
-        [ x, minLoss, exitFlag ] = fmincon( f, x0, A, ub );
+        [ x, minLoss, exitFlag, output, lambda, grad ] = fmincon( f, x0, [], [], [], [], lb, ub, [], options );
     end
     pSpace        = struct();
     
-    for i = 0:( numberOfCells - 1 )
-        pSpace.radius                   = x( i * 3 + 1 );
-        pSpace.majorVsMinor             = x( i * 3 + 2 );
-        pSpace.majorVsMinorAngle        = x( i * 3 + 3 );
-        cellParams                      = abcStructureUnion( pSpace, cellParamsArray{ i + 1 } );
-        cellParamsArray{ i + 1 }        = cellParams;
+    if( 1 )
+        for i = 0:( numberOfCells - 1 )
+            pSpace.radius                   = x( i * 3 + 1 );
+            pSpace.majorVsMinor             = x( i * 3 + 2 );
+            pSpace.majorVsMinorAngle        = x( i * 3 + 3 );
+            cellParams                      = abcStructureUnion( pSpace, cellParamsArray{ i + 1 } );
+            cellParamsArray{ i + 1 }        = cellParams;
+        end
+    else %FIXME - 1 parameter hack
+        for i = 1:numberOfCells
+            pSpace.radius                   = x( i);
+            cellParams                      = abcStructureUnion( pSpace, cellParamsArray{ i } );
+            cellParamsArray{ i }            = cellParams;
+        end        
     end
 
     [ canvas, mask ] = abcDrawCells( cellParamsArray, allParams );
 end
 
-function loss = simplexLossFn( x, yStruct, cellParamsArray, allParams, optimisationParams )
-    if( 1 || optimisationParams.visuallyVerbose )
-        disp( x );
+function loss = simplexLossFn( x, yStruct, cellParamsArray, allParams, optimisationParams )    
+    if( 1 )
+        numberOfCells = length( x ) / 3;
+        %cellParamsArray = cell( numberOfCells, 1 );
+        pSpace                          = struct();
+        for i = 0:( numberOfCells - 1 )
+            pSpace.radius                   = x( i * 3 + 1 );
+            pSpace.majorVsMinor             = x( i * 3 + 2 );
+            pSpace.majorVsMinorAngle        = x( i * 3 + 3 );
+            cellParams                      = abcStructureUnion( pSpace, cellParamsArray{ i + 1 } );
+            cellParamsArray{ i + 1 }        = cellParams;
+        end
+    else%FIXME - hack to only have 1 parameter
+        numberOfCells = length( x );
+        pSpace = struct();
+        for i = 1:numberOfCells
+            pSpace.radius                   = x( i );
+            cellParams                      = abcStructureUnion( pSpace, cellParamsArray{ i } );
+            cellParamsArray{ i }            = cellParams;
+        end
+        
     end
-    
-    numberOfCells = length( x ) / 3;
-    %cellParamsArray = cell( numberOfCells, 1 );
-    pSpace                          = struct();
-    for i = 0:( numberOfCells - 1 )
-        pSpace.radius                   = x( i * 3 + 1 );
-        pSpace.majorVsMinor             = x( i * 3 + 2 );
-        pSpace.majorVsMinorAngle        = x( i * 3 + 3 );
-        cellParams                      = abcStructureUnion( pSpace, cellParamsArray{ i + 1 } );
-        cellParamsArray{ i + 1 }        = cellParams;
-    end
-    
+        
     [ canvas, mask ]  = abcDrawCells( cellParamsArray, allParams );
     xStruct.canvas    = canvas;
     xStruct.mask      = mask;
     loss              = lossFn2( xStruct, yStruct, optimisationParams );                       
     
+    if( 0 && optimisationParams.visuallyVerbose )
+        global stuff;
+        stuff(end + 1, :) = [ x( 1 ), loss ];
+    end
+    %disp( [ num2str( loss ), '-', num2str( x( 1 ) ) ] );
+    fuckMatlab = 1;
 end
 
 
@@ -102,15 +126,17 @@ function l = lossFn2( xStruct, yStruct, optimisationParams )
     
     tmp0 = ( targetCanvas - canvas );
     
-    if( optimisationParams.visuallyVerbose )
-        imshow( abs( tmp0 ) );
-        pause
-        %pause( 0.1 );
+    if( 1 || optimisationParams.visuallyVerbose )
+        subplot( 133 );
+        %colormap( 'default' );
+        %axis image;
+        imshow( ( tmp0 + 1 ) ./ 2 );
+        
+        pause( 0.001 );
     end
     
     tmp1 = tmp0( yStruct.coverageMask ); 
     l    = sum( sum( tmp1 .* tmp1 ) );
-    %disp( l );
     %pause;
 end
 
@@ -165,5 +191,5 @@ function l = lossFn( xStruct, yStruct, optimisationParams )
     %disp( [ 'IntensityScore=', num2str( Q90 ), '---',  num2str( modInt ), ', DistanceScore = ', num2str( l ) ] );
     %disp( [ 'IntensityScore=', num2str( intensityScore ), ', DistanceScore = ', num2str( l ) ] );
     
-    l = l + intensityScore;
+    l = double( sum( l + intensityScore ) );
 end 
