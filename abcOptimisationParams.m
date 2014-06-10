@@ -19,9 +19,14 @@ function optimisationParams = abcOptimisationParams()
     
     optimisationParams.visuallyVerbose = false;
     %optimisationParams.algorithm = 'gridsearch';
-    optimisationParams.algorithm = 'simplex';
+    %optimisationParams.algorithm = 'simplex';
+    
+    optimisationParams.lossMethod = 'vector';
+    %optimisationParams.lossMethod = 'double';
+    
     %optimisationParams.lossFunction = 'exactNonZeros';
-    optimisationParams.lossFunction = 'truncatedSquareLoss';
-    optimisationParams.truncation = optimisationParams.maxRadius;
+    %optimisationParams.lossFunction = 'truncatedSquareLoss';
+    optimisationParams.lossFunction = 'No';
+    %optimisationParams.truncation = optimisationParams.maxRadius;
     optimisationParams.epsilon = 1e-6;
 end    

@@ -11,7 +11,9 @@ if exist( 'abcGenerateImage', 'file' ) ~= 2
     addpath( '../fminsearchbnd/' );
 end
 
-regenerateImage = false;
+regenerateImage = true;
+saveMovie = false;
+movieName = 'movie3';
 
 %generate a random cells image
 if( regenerateImage || ~exist( 'canvas', 'var' ) )
@@ -62,6 +64,18 @@ end
 newMask = canvas * 0;
 newCanvas  = abcEmptyCanvas( params.canvasSize,  true );
 
+%set(gca,'NextPlot','replaceChildren');
+global writerObj;
+if saveMovie
+    writerObj = VideoWriter( strcat( movieName, '.avi' ) );
+else
+    writerObj = -1;
+end
+
+if( writerObj ~= -1 )
+    open(writerObj);
+end
+
 for i = 1:size( splits, 1 )
     
     if testingOneCell && i ~= cellToTest
@@ -101,7 +115,15 @@ for i = 1:size( splits, 1 )
     subplot( 132 );
     imshow( newCanvas );
     pause( 0.01 );
+    if( writerObj ~= -1 )
+        frame = getframe(gcf);
+        writeVideo(writerObj,frame);
+    end
+    %F(j) = getframe;
 end
   
- 
+%movie(F,20) % Play the movie twenty times
+if( writerObj ~= -1 )
+    close( writerObj ); 
+end
  hold off;

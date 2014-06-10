@@ -26,11 +26,11 @@ function [ x, minLoss, canvas, mask ] = abcMinLoss( cells, cellParams, allParams
         cellParamsArray{ j } = cellParams;
     end
     
-    if strcmp( optimisationParams.algorithm, 'simplex' )
-        [ x, minLoss, canvas, mask ] = simplex( yStruct, cellParamsArray, allParams, optimisationParams );
-    else
-        error( [ 'Unknown method ', optimisationParams.algorithm ] );
-    end
+    %if strcmp( optimisationParams.algorithm, 'simplex' )
+    [ x, minLoss, canvas, mask ] = simplex( yStruct, cellParamsArray, allParams, optimisationParams );
+    %else
+    %    error( [ 'Unknown method ', optimisationParams.algorithm ] );
+    %end
 end
 
 function [ x, minLoss, canvas, mask ] = simplex( yStruct, cellParamsArray, allParams, optimisationParams )
@@ -48,19 +48,32 @@ function [ x, minLoss, canvas, mask ] = simplex( yStruct, cellParamsArray, allPa
     ub = repmat( optimisationParams.upperBound, 1, numberOfCells );
     gradStep = repmat( [ 1, 0.05, 0.05 ], 1, numberOfCells );
     %FIXME - remember you are blurring.
-    DiffMaxChange = 0.08;%'Algorithm', 'sqp'
-    %options = optimoptions( 'fmincon', 'Display', 'Iter', 'DiffMinChange', 0.1 );, 'Algorithm', 'active-set'
-    options = optimoptions( 'fmincon','Algorithm', 'sqp', 'TolX', 1e-5, 'TolFun', 1e-4, 'Diagnostics', 'on', 'Display', 'Iter', 'FinDiffRelStep', gradStep, 'DiffMaxChange', DiffMaxChange,'FinDiffType', 'central' );%, 'PlotFcns', @optimplotfval );'FinDiffType', 'central'
-    
-    
+    %DiffMaxChange = 0.5;%'Algorithm', 'sqp'    
+    DiffMaxChange = 1;%'Algorithm', 'sqp'    
     if( 0 )
         [ x, minLoss, exitFlag ] = fminsearch( f, x0, options );
         %[ x, minLoss, exitFlag ] = fminsearchbnd( f, x0, lb, ub, options );
         disp( [ 'Exit Flag Was ', num2str( exitFlag ) ] );
-    else
+    elseif( strcmp( optimisationParams.lossMethod, 'vector' )  )
+        options = optimoptions( 'lsqnonlin', ...
+            'Algorithm', 'levenberg-marquardt', ...
+            'TolX', 1e-5, ...
+            'TolFun', 1e-4,...
+            'Diagnostics', 'on',...
+            'Display', 'Iter', ...
+            'FinDiffRelStep', gradStep,...
+            'DiffMaxChange', DiffMaxChange, ...
+            'FinDiffType', 'central' );%, 'PlotFcns', @optimplotfval );'FinDiffType', 'central'
+            lb = [];
+            ub = [];
+        [x,minLoss,residualVector,exitFlag ] = lsqnonlin( f, x0, lb, ub, options );
+    elseif( strcmp( optimisationParams.lossMethod, 'double' ) )
+        options = optimoptions( 'fmincon','Algorithm', 'sqp', 'TolX', 1e-4, 'TolFun', 1e-4, 'Diagnostics', 'on', 'Display', 'Iter', 'FinDiffRelStep', gradStep, 'DiffMaxChange', DiffMaxChange,'FinDiffType', 'central' );%, 'PlotFcns', @optimplotfval );'FinDiffType', 'central'
         A = eye( numel( lb ), numel( lb ) );
         %A( 1:3, 1:3 ) = A( 1:3, 1:3 ) * -1;
         [ x, minLoss, exitFlag, output, lambda, grad ] = fmincon( f, x0, [], [], [], [], lb, ub, [], options );
+    else
+        error( 'Unkown lossmethod' );
     end
     pSpace        = struct();
     
@@ -84,26 +97,15 @@ function [ x, minLoss, canvas, mask ] = simplex( yStruct, cellParamsArray, allPa
 end
 
 function loss = simplexLossFn( x, yStruct, cellParamsArray, allParams, optimisationParams )    
-    if( 1 )
-        numberOfCells = length( x ) / 3;
-        %cellParamsArray = cell( numberOfCells, 1 );
-        pSpace                          = struct();
-        for i = 0:( numberOfCells - 1 )
-            pSpace.radius                   = x( i * 3 + 1 );
-            pSpace.majorVsMinor             = x( i * 3 + 2 );
-            pSpace.majorVsMinorAngle        = x( i * 3 + 3 );
-            cellParams                      = abcStructureUnion( pSpace, cellParamsArray{ i + 1 } );
-            cellParamsArray{ i + 1 }        = cellParams;
-        end
-    else%FIXME - hack to only have 1 parameter
-        numberOfCells = length( x );
-        pSpace = struct();
-        for i = 1:numberOfCells
-            pSpace.radius                   = x( i );
-            cellParams                      = abcStructureUnion( pSpace, cellParamsArray{ i } );
-            cellParamsArray{ i }            = cellParams;
-        end
-        
+    numberOfCells = length( x ) / 3;
+    %cellParamsArray = cell( numberOfCells, 1 );
+    pSpace                          = struct();
+    for i = 0:( numberOfCells - 1 )
+        pSpace.radius                   = x( i * 3 + 1 );
+        pSpace.majorVsMinor             = x( i * 3 + 2 );
+        pSpace.majorVsMinorAngle        = x( i * 3 + 3 );
+        cellParams                      = abcStructureUnion( pSpace, cellParamsArray{ i + 1 } );
+        cellParamsArray{ i + 1 }        = cellParams;
     end
         
     [ canvas, mask ]  = abcDrawCells( cellParamsArray, allParams );
@@ -111,12 +113,6 @@ function loss = simplexLossFn( x, yStruct, cellParamsArray, allParams, optimisat
     xStruct.mask      = mask;
     loss              = lossFn2( xStruct, yStruct, optimisationParams );                       
     
-    if( 0 && optimisationParams.visuallyVerbose )
-        global stuff;
-        stuff(end + 1, :) = [ x( 1 ), loss ];
-    end
-    %disp( [ num2str( loss ), '-', num2str( x( 1 ) ) ] );
-    fuckMatlab = 1;
 end
 
 
@@ -133,10 +129,22 @@ function l = lossFn2( xStruct, yStruct, optimisationParams )
         imshow( ( tmp0 + 1 ) ./ 2 );
         
         pause( 0.001 );
+        global writerObj;
+        if( writerObj ~= -1 )
+            frame = getframe(gcf);
+            writeVideo(writerObj,frame);
+        end
+        
+
     end
     
     tmp1 = tmp0( yStruct.coverageMask ); 
-    l    = sum( sum( tmp1 .* tmp1 ) );
+    
+    if strcmp( optimisationParams.lossMethod, 'vector' ) 
+        l = tmp1;
+    else
+        l    = sum( sum( tmp1 .* tmp1 ) );
+    end
     %pause;
 end
 
@@ -187,9 +195,6 @@ function l = lossFn( xStruct, yStruct, optimisationParams )
     end
     
     l = ( tmp1' * tmp1 ) / nonZeros;
-    
-    %disp( [ 'IntensityScore=', num2str( Q90 ), '---',  num2str( modInt ), ', DistanceScore = ', num2str( l ) ] );
-    %disp( [ 'IntensityScore=', num2str( intensityScore ), ', DistanceScore = ', num2str( l ) ] );
     
     l = double( sum( l + intensityScore ) );
 end 

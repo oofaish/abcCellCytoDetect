@@ -22,5 +22,7 @@ slprj/
 *.mat
 *.jpg
 
+*.avi
+
 pathdef.m
 COMMENTS.md
