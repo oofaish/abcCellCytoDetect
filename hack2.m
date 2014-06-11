@@ -8,17 +8,17 @@ testingOneCell = ( cellToTest > 0 );
 
 if exist( 'abcGenerateImage', 'file' ) ~= 2
     addpath( '../abcCellGenerator/' );
-    addpath( '../fminsearchbnd/' );
+    %addpath( '../fminsearchbnd/' );
 end
 
-regenerateImage = true;
-saveMovie = false;
-movieName = 'movie3';
+regenerateImage = false;
+saveMovie = true;
+movieName = 'jun10_final';
 
 %generate a random cells image
 if( regenerateImage || ~exist( 'canvas', 'var' ) )
     params = struct();
-    params.totalNumberOfCells = 5;
+    params.totalNumberOfCells = 10;
     params.randomiseAlpha = false;
     params = abcParams( params );
     [ canvas, nucleusInfos, cellInfos ] = abcGenerateImage( false, false, '', params );
