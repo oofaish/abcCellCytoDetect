@@ -1,18 +1,28 @@
-function [ cellImage2, cellMask2, nucleusMask2 ] = abcTransformCell( cellImage, cellMask, nucleusMask, x, params )
+function final = abcTransformCell( cellImage, cellMask, nucleusMask, x, params, nCentroid )
 
 canvasSize = params.canvasSize( 1 );
 assert( params.canvasSize( 1 ) == params.canvasSize( 1 ), 'I am assuming height and width are the same' );
 
+
 dx = x( 1 );
 dy = x( 2 );
-
 theta = x( 3 );
 delta = x( 4 );
 
 tx = canvasSize / 2 + dx;
 ty = canvasSize / 2 + dy;
-%theta = pSpace.theta;
-%delta = pSpace.delta;
+
+piMultiplier = ( theta / pi ) - floor( theta / ( pi * 2 ) ) * 2;
+
+assert( piMultiplier >= 0 && piMultiplier <= 2, 'WTF' );
+
+%this is an attempt to stop it chopping off bits it shouldnt from the sides
+%if  piMultiplier < 1
+    %dx1 = 0;
+%end
+%if piMultiplier > 0.5 && piMultiplier < 1.5
+    %dy1 = 0;
+%end
 
 [Y_corners,M_homoTrans] = homoSpaceTransform(tx, ty, theta, delta, cellImage );
 
@@ -39,7 +49,8 @@ tmp_pickup_Cell_NucleiMask = false(canvasSize,canvasSize);
 %counter = (1:size( y_canvas, 1 ) );
 
 %counter2 = arrayfun( @(x) ( ismember( x, idxCellMask ) ), idxYTilde );
-counter2 = arrayfun( @(x) ( builtin('_ismemberoneoutput',x,idxCellMask ) ), idxYTilde );
+%counter2 = arrayfun( @(x) ( builtin('_ismemberoneoutput',x,idxCellMask ) ), idxYTilde );
+counter3 = binarySearch( idxCellMask, idxYTilde,[], 0 );
 
 %counter3 = counter2;
 %counter4 = counter( counter2 ~= 0 );
@@ -51,23 +62,27 @@ counter2 = arrayfun( @(x) ( builtin('_ismemberoneoutput',x,idxCellMask ) ), idxY
 
 for k = 1:size(y_canvas,1)
     idx = idxYTilde(k,1);
-    isCellPixel = counter2( k );
-    if isCellPixel == 1
+    isCellPixel = counter3( k );
+    if isCellPixel ~= 0
         tmp_Img(x_canvas(k,1),y_canvas(k,1)) = cellImage(Y_tilde(1,k), Y_tilde(2,k));
-        tmp_pickup_Cell_Mask(x_canvas(k,1),y_canvas(k,1)) = logical(cellMask(Y_tilde(1,k), Y_tilde(2,k)));
+        tmp_pickup_Cell_Mask(      x_canvas(k,1),y_canvas(k,1)) = logical(cellMask(   Y_tilde(1,k), Y_tilde(2,k)));
         tmp_pickup_Cell_NucleiMask(x_canvas(k,1),y_canvas(k,1)) = logical(nucleusMask(Y_tilde(1,k), Y_tilde(2,k)));
     end
 end
 
 %+----------------------------------+
 %| Translate tmp_Img* to the center |
-%|           if j == 1              |
 %+----------------------------------+
-img_1stCell_stat = regionprops(tmp_pickup_Cell_Mask, 'Centroid');
+img_1stCell_stat = regionprops(double( tmp_pickup_Cell_NucleiMask ), 'Centroid');
 dx = tx - img_1stCell_stat(1,1).Centroid(1,2);
 dy = ty - img_1stCell_stat(1,1).Centroid(1,1);
 
-[xTmpImg, yTmpImg] = find(tmp_pickup_Cell_Mask == 1);
+if ~isempty( nCentroid ) 
+    dx = dx + nCentroid( 1 ) - canvasSize / 2.0;% - round( img_1stCell_stat(1,1).Centroid(1,2) );
+    dy = dy + nCentroid( 2 ) - canvasSize / 2.0;% - round( img_1stCell_stat(1,1).Centroid(1,1) );
+end
+
+[xTmpImg,        yTmpImg]        = find(tmp_pickup_Cell_Mask       == 1);
 [xTmpNucleiMask, yTmpNucleiMask] = find(tmp_pickup_Cell_NucleiMask == 1);
 
 cellImage2   = uint8(zeros(canvasSize,canvasSize));
@@ -90,7 +105,10 @@ for k = 1:size(xTmpNucleiMask,1)
     nucleusMask2(round(xTmpNucleiMask(k,1) + dx), round(yTmpNucleiMask(k,1) + dy)) = 1;
 end
 
-
+final.c = cellImage2;
+final.m = cellMask2;
+final.n = nucleusMask2;
+%[ cellImage2, cellMask2, nucleusMask2 ]
 
 end
 
